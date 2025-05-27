@@ -16,13 +16,14 @@ class Checkup extends Model
      * @var array<int, string>
      */
     protected $fillable = [
-        'patient_id',
-        'blood_pressure',
-        'oxygen_saturation',
-        'blood_sugar',
-        'cholesterol',
-        'uric_acid',
-        'checkup_date', // Tambahkan ini
+        'patient_id',    // Foreign key to patients table
+        'checkup_date',  // Date of health checkup
+        'blood_pressure', // Format: systolic/diastolic (e.g., 120/80)
+        'oxygen_saturation', // SpO2 percentage (0-100)
+        'blood_sugar',   // Blood sugar level in mg/dL
+        'cholesterol',   // Cholesterol level in mg/dL
+        'uric_acid',    // Uric acid level in mg/dL
+        'notes',        // Optional notes about the checkup
     ];
 
     /**
@@ -33,6 +34,9 @@ class Checkup extends Model
     protected $casts = [
         'checkup_date' => 'datetime', // Cast ke objek Carbon
         'uric_acid' => 'decimal:1', // Cast asam urat ke desimal 1 angka di belakang koma
+        'blood_sugar' => 'integer',     // Added casting
+        'cholesterol' => 'integer',     // Added casting
+        'oxygen_saturation' => 'integer' // Added casting
     ];
 
     /**

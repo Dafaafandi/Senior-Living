@@ -5,7 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:senior_living/repository.dart';
 import 'package:senior_living/model.dart'; // Add this import for Blog class
 import 'screens/opening_screen.dart';
-import 'screens/home_page.dart';
+import 'package:senior_living/screens/home_page.dart';
 import 'screens/login_screen.dart';
 import 'screens/create_account_screen.dart';
 import 'screens/success_screen.dart';
@@ -18,6 +18,7 @@ import 'models/schedule_item.dart';
 import 'models/health_record.dart';
 
 const String healthRecordsBoxName = 'health_records';
+const String schedulesBoxName = 'schedules'; // Added constant
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +30,7 @@ void main() async {
   Hive.registerAdapter(HealthRecordAdapter());
 
   // Open boxes
-  await Hive.openBox<ScheduleItem>('schedules');
+  await Hive.openBox<ScheduleItem>(schedulesBoxName);
   await Hive.openBox<HealthRecord>(healthRecordsBoxName);
 
   runApp(const MyApp());
@@ -54,7 +55,6 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> getData() async {
     final data = await repository.getdata();
-    setState(() {});
     if (data != null) {
       setState(() {
         listblog = data;
@@ -83,6 +83,7 @@ class _MyAppState extends State<MyApp> {
             color: Colors.black87,
           ),
         ),
+        visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
@@ -97,55 +98,59 @@ class _MyAppState extends State<MyApp> {
         '/login': (context) => const LoginScreen(),
         '/create-account': (context) => const CreateAccountScreen(),
         '/success': (context) => const SuccessScreen(),
-        '/home': (context) {
+        '/home_page': (context) {
+          // Use the same route handling as '/home' but with updated route name
           final arguments = ModalRoute.of(context)?.settings.arguments
               as Map<String, dynamic>?;
-          final String name = arguments?['name'] ?? 'Pengguna';
-          final int age = arguments?['age'] ?? 0;
-          final String status = arguments?['status'] ?? 'Tidak Diketahui';
-          return HomePage(userName: name, userAge: age, healthStatus: status);
+          return HomePage(
+            userName: arguments?['name'] ?? 'Pengguna',
+            userAge: arguments?['age'] ?? 0,
+            healthStatus: arguments?['status'] ?? 'Tidak Diketahui',
+          );
+        },
+        '/home': (context) {
+          // Keep this for backward compatibility
+          final arguments = ModalRoute.of(context)?.settings.arguments
+              as Map<String, dynamic>?;
+          return HomePage(
+            userName: arguments?['name'] ?? 'Pengguna',
+            userAge: arguments?['age'] ?? 0,
+            healthStatus: arguments?['status'] ?? 'Tidak Diketahui',
+          );
         },
         '/schedule': (context) => const ScheduleScreen(),
         '/health': (context) {
           final arguments = ModalRoute.of(context)?.settings.arguments
               as Map<String, dynamic>?;
-          final String patientId = arguments?['patientId'];
+          final String? patientId = arguments?['patientId'];
 
           if (patientId == null) {
-            print("ERROR: Navigasi ke HealthRecordScreen tanpa patientId.");
             return Scaffold(
-              appBar: AppBar(
-                title: const Text("Error Navigasi"),
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ),
+              appBar: AppBar(title: const Text("Error Navigasi")),
               body: const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.error_outline, size: 48, color: Colors.red),
-                      SizedBox(height: 16),
-                      Text(
-                        "ID Pasien diperlukan untuk mengakses catatan kesehatan.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    ],
-                  ),
+                child: Text(
+                  "ID Pasien diperlukan untuk mengakses catatan kesehatan.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16),
                 ),
               ),
             );
           }
-
           return HealthRecordScreen(patientId: patientId);
         },
         '/history': (context) => const HistoryScreen(),
         '/notification': (context) => const NotificationScreen(),
         '/settings': (context) => const SettingsScreen(),
+      },
+      onUnknownRoute: (settings) {
+        return MaterialPageRoute(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: const Text('Error Navigasi')),
+            body: Center(
+              child: Text('Halaman tidak ditemukan: ${settings.name}'),
+            ),
+          ),
+        );
       },
     );
   }

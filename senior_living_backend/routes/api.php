@@ -23,13 +23,18 @@ Route::post('/register', [AuthController::class, 'register']);
 
 // Protected Routes
 Route::middleware('auth:sanctum')->group(function () {
+    // User Routes
     Route::get('/user', [AuthController::class, 'user']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
     // Patient Routes
     Route::get('/patients', [PatientApiController::class, 'index']);
 
-    // Checkup Routes
+    // Checkup Routes - CRUD operations
     Route::get('/checkups', [CheckupApiController::class, 'index']);
     Route::post('/checkups', [CheckupApiController::class, 'store']);
+    Route::get('/checkups/{checkup}', [CheckupApiController::class, 'show']);
+    Route::put('/checkups/{checkup}', [CheckupApiController::class, 'update']);
+    Route::delete('/checkups/{checkup}', [CheckupApiController::class, 'destroy']);
+    Route::delete('/checkups/{checkup}', [CheckupApiController::class, 'destroy']);
 });

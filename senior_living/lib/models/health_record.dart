@@ -40,23 +40,49 @@ class HealthRecord extends HiveObject {
     this.uricAcid,
   });
 
+  factory HealthRecord.fromJson(Map<String, dynamic> json) {
+    return HealthRecord(
+      id: json['id']?.toString() ?? '',
+      date: DateTime.parse(json['checkup_date']),
+      bloodPressure: json['blood_pressure'],
+      spo2: json['oxygen_saturation'] != null
+          ? int.tryParse(json['oxygen_saturation'].toString())
+          : null,
+      bloodSugar: json['blood_sugar'] != null
+          ? int.tryParse(json['blood_sugar'].toString())
+          : null,
+      cholesterol: json['cholesterol'] != null
+          ? int.tryParse(json['cholesterol'].toString())
+          : null,
+      uricAcid: json['uric_acid'] != null
+          ? double.tryParse(json['uric_acid'].toString())
+          : null,
+      notes: json['notes'],
+    );
+  }
+
   // Fungsi helper untuk mendapatkan status berdasarkan nilai
   String getBloodPressureStatus() {
     if (bloodPressure == null || bloodPressure!.isEmpty) return '-';
     try {
       final parts = bloodPressure!.split('/');
       if (parts.length != 2) return 'Error';
-      final systole = int.parse(parts[0]);
-      final diastole = int.parse(parts[1]);
 
-      // Logika status (contoh sederhana, sesuaikan sesuai kebutuhan medis)
-      if (systole < 120 && diastole < 80) return 'Optimal';
-      if (systole >= 120 && systole <= 129 && diastole < 80) return 'Normal';
-      if (systole >= 130 && systole <= 139 || diastole >= 80 && diastole <= 89)
-        return 'Normal Tinggi';
-      if (systole >= 140 || diastole >= 90)
-        return 'Hipertensi'; // Waspada/Tinggi
-      return 'Normal'; // Default
+      final systole = int.parse(parts[0]); // TDS
+      final diastole = int.parse(parts[1]); // TDD
+
+      // Kategori sesuai dengan pedoman standar medis
+      if (systole < 90 || diastole < 60) return 'Rendah';
+      if (systole < 120 && diastole < 80) return 'Normal';
+      if ((systole >= 121 && systole <= 139) ||
+          (diastole >= 81 && diastole <= 89)) return 'Pra-hipertensi';
+      if ((systole >= 140 && systole <= 159) ||
+          (diastole >= 90 && diastole <= 99)) return 'Hipertensi tingkat 1';
+      if (systole >= 160 || diastole >= 100) return 'Hipertensi tingkat 2';
+      if (systole > 140 && diastole < 90)
+        return 'Hipertensi Sistolik Terisolasi';
+
+      return 'Normal'; // Default jika tidak masuk kategori manapun
     } catch (e) {
       return 'Error';
     }
