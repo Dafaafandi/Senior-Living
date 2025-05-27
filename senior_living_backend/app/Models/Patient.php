@@ -5,7 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany; // Import jika perlu relasi one-to-many
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Carbon\Carbon;
 
 class Patient extends Model
 {
@@ -22,8 +23,8 @@ class Patient extends Model
         'gender',
         'address',
         'medical_history',
-        'user_id', // Pastikan user_id bisa diisi massal
         'photo',
+        'user_id',
     ];
 
     /**
@@ -59,5 +60,33 @@ class Patient extends Model
          return $this->hasMany(Schedule::class); // Ganti Schedule::class dengan nama model schedule Anda nanti
      }
 
-    // Tambahkan relasi lain jika perlu (Reminders, HospitalVisits)
+    /**
+     * Mendapatkan data kunjungan rumah sakit pasien ini.
+     */
+    public function hospitalVisits(): HasMany
+    {
+        return $this->hasMany(HospitalVisit::class);
+    }
+
+    /**
+     * Mendapatkan data pengingat pasien ini.
+     */
+    public function reminders(): HasMany
+    {
+        return $this->hasMany(Reminder::class);
+    }
+
+    /**
+     * Get the patient's age.
+     * Returns null if birth_date is not set or invalid.
+     */
+    public function getAgeAttribute(): ?int
+    {
+        try {
+            return $this->birth_date ? Carbon::parse($this->birth_date)->age : null;
+        } catch (\Exception $e) {
+            \Log::error("Error calculating age for patient {$this->id}: {$e->getMessage()}");
+            return null;
+        }
+    }
 }

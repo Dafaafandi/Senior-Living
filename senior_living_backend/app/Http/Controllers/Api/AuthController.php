@@ -22,9 +22,10 @@ class AuthController extends Controller
             'device_name' => 'required|string', // Nama perangkat (e.g., "Abi Dafa Phone")
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        $user = User::where('email', $request->email)
+            ->with('patient')
+            ->first();
 
-        // Cek user dan password
         if (! $user || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['Email atau password salah.'],
@@ -34,10 +35,21 @@ class AuthController extends Controller
         // Buat token Sanctum
         $token = $user->createToken($request->device_name)->plainTextToken;
 
+        $userData = $user->toArray();
+        if ($user->patient) {
+            $userData['age'] = $user->patient->age;
+            $userData['patient_id'] = $user->patient->id;
+            $userData['birth_date'] = $user->patient->birth_date?->toDateString();
+        } else {
+            $userData['age'] = null;
+            $userData['patient_id'] = null;
+            $userData['birth_date'] = null;
+        }
+
         // Kembalikan response berisi user dan token
         return response()->json([
             'message' => 'Login berhasil',
-            'user' => $user, // Kirim data user
+            'user' => $userData,
             'token' => $token, // Kirim token
         ]);
     }
@@ -47,8 +59,8 @@ class AuthController extends Controller
      */
     public function user(Request $request)
     {
-        // Mengembalikan data user yang sedang login (berdasarkan token)
-        return response()->json($request->user());
+        $user = $request->user();
+        return response()->json(array_merge($user->toArray(), ['age' => $user->age]));
     }
 
     /**

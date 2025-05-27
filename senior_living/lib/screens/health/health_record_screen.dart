@@ -1,5 +1,6 @@
 // lib/screens/health/health_record_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../models/health_record.dart';
@@ -19,7 +20,6 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
   final DateFormat _dateFormat = DateFormat('dd MMMM yyyy', 'id_ID');
   final ApiService _apiService = ApiService();
   bool _isLoading = true;
-  List<HealthRecord> _serverRecords = [];
 
   @override
   void initState() {
@@ -29,28 +29,35 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
   }
 
   Future<void> _loadHealthRecords() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
-      // Replace with actual patient ID from your authentication system
-      String currentPatientId = widget.patientId;
-
-      final fetchedRecords = await _apiService.getCatatanKesehatan(
-        patientId: currentPatientId,
+      final fetchedRecordsFromServer = await _apiService.getCatatanKesehatan(
+        patientId: widget.patientId,
       );
 
-      if (fetchedRecords != null) {
-        // Clear existing records and sync with server data
-        await healthRecordBox.clear();
-        for (var record in fetchedRecords) {
+      if (fetchedRecordsFromServer != null) {
+        final Map<String, HealthRecord> serverRecordsMap = {
+          for (var record in fetchedRecordsFromServer) record.id: record
+        };
+        final List<String> localKeys =
+            healthRecordBox.keys.cast<String>().toList();
+
+        // Sync local with server
+        for (String localKey in localKeys) {
+          if (!serverRecordsMap.containsKey(localKey)) {
+            await healthRecordBox.delete(localKey);
+          }
+        }
+
+        for (var record in fetchedRecordsFromServer) {
           await healthRecordBox.put(record.id, record);
         }
 
-        setState(() => _serverRecords = fetchedRecords);
-
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Data berhasil dimuat dari server')),
+            const SnackBar(content: Text('Data berhasil disinkronkan')),
           );
         }
       }
@@ -65,6 +72,17 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<DateTime?> _showDatePickerInDialog(
+      BuildContext dialogContext, DateTime initialDate) async {
+    return await showDatePicker(
+      context: dialogContext,
+      initialDate: initialDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      locale: const Locale('id', 'ID'),
+    );
   }
 
   @override
@@ -190,6 +208,19 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                 "Gula Darah:",
                 record.bloodSugar != null ? "${record.bloodSugar} mg/dL" : '-',
                 record.getBloodSugarStatus()),
+            const SizedBox(height: 8),
+            _buildReadingRow(
+                "Kolesterol:",
+                record.cholesterol != null
+                    ? "${record.cholesterol} mg/dL"
+                    : '-',
+                record.getCholesterolStatus()),
+            _buildReadingRow(
+                "Asam Urat:",
+                record.uricAcid != null
+                    ? "${record.uricAcid!.toStringAsFixed(1)} mg/dL"
+                    : '-',
+                record.getUricAcidStatus()),
             if (record.notes != null && record.notes!.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text("Catatan: ${record.notes!}",
@@ -290,7 +321,8 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
   // Fungsi untuk menampilkan dialog tambah data
   Future<void> _showAddRecordDialog({HealthRecord? recordToEdit}) async {
     final formKey = GlobalKey<FormState>();
-    // Existing controllers
+    final bool isEditMode = recordToEdit != null;
+
     final dateController = TextEditingController(
         text: recordToEdit != null
             ? _dateFormat.format(recordToEdit.date)
@@ -305,8 +337,8 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
     // New controllers for cholesterol and uric acid
     final cholesterolController =
         TextEditingController(text: recordToEdit?.cholesterol?.toString());
-    final uricAcidController =
-        TextEditingController(text: recordToEdit?.uricAcid?.toString());
+    final uricAcidController = TextEditingController(
+        text: recordToEdit?.uricAcid?.toString()?.replaceAll('.', ','));
 
     final notesController = TextEditingController(text: recordToEdit?.notes);
     DateTime selectedDate = recordToEdit?.date ?? DateTime.now();
@@ -318,9 +350,9 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
           bool _isDialogSubmitting = false;
 
           return AlertDialog(
-            title: Text(recordToEdit == null
-                ? 'Tambah Catatan Kesehatan'
-                : 'Edit Catatan'),
+            title: Text(isEditMode
+                ? 'Edit Catatan Kesehatan'
+                : 'Tambah Catatan Kesehatan'),
             content: SingleChildScrollView(
               child: Form(
                 key: formKey,
@@ -333,28 +365,19 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                         labelText: 'Tanggal',
                         suffixIcon: Icon(Icons.calendar_today),
                       ),
-                      readOnly:
-                          true, // Buat read-only agar dipilih pakai date picker
+                      readOnly: true,
                       onTap: () async {
-                        final DateTime? picked = await showDatePicker(
-                          context: context,
-                          initialDate: selectedDate,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime.now().add(const Duration(
-                              days: 30)), // Batasi hingga hari ini + 30 hari
-                          locale: const Locale(
-                              'id', 'ID'), // Set locale ke Indonesia
-                        );
+                        final DateTime? picked = await _showDatePickerInDialog(
+                            context, selectedDate);
                         if (picked != null && picked != selectedDate) {
-                          setState(() {
-                            // Perlu setState jika dialog ini stateful, atau handle state di luar
+                          setDialogState(() {
                             selectedDate = picked;
                             dateController.text =
                                 _dateFormat.format(selectedDate);
                           });
                         }
                       },
-                      validator: (value) => value == null || value.isEmpty
+                      validator: (value) => value?.isEmpty == true
                           ? 'Tanggal tidak boleh kosong'
                           : null,
                     ),
@@ -385,10 +408,35 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                     ),
                     TextFormField(
                       controller: uricAcidController,
-                      decoration:
-                          const InputDecoration(labelText: 'Asam Urat (mg/dL)'),
+                      decoration: const InputDecoration(
+                          labelText: 'Asam Urat (mg/dL)',
+                          hintText: 'Contoh: 6.2 atau 6,2'),
                       keyboardType:
                           TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'^\d*([.,])?\d{0,1}$')),
+                        TextInputFormatter.withFunction((oldValue, newValue) {
+                          final text = newValue.text;
+                          if (text.contains('.') && text.contains(',')) {
+                            return oldValue;
+                          }
+                          if (text.split('.').length > 2 ||
+                              text.split(',').length > 2) {
+                            return oldValue;
+                          }
+                          return newValue;
+                        }),
+                      ],
+                      validator: (value) {
+                        if (value?.isNotEmpty == true) {
+                          final normalizedValue = value!.replaceAll(',', '.');
+                          if (double.tryParse(normalizedValue) == null) {
+                            return 'Masukkan angka desimal yang valid';
+                          }
+                        }
+                        return null;
+                      },
                     ),
                     TextFormField(
                       controller: notesController,
@@ -416,74 +464,113 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                             _isDialogSubmitting = true;
                           });
 
+                          // Format uric acid value
+                          String? formattedUricAcid;
+                          if (uricAcidController.text.isNotEmpty) {
+                            formattedUricAcid =
+                                uricAcidController.text.replaceAll(',', '.');
+                          }
+
+                          print('DEBUG - Form Values before API call:');
+                          print('Patient ID: ${widget.patientId}');
+                          print('Tanggal: $selectedDate');
+                          print('Asam Urat (raw): ${uricAcidController.text}');
+                          print('Asam Urat (formatted): $formattedUricAcid');
+                          // Add debug logging
+                          print('DEBUG - Form Values:');
+                          print('Patient ID: ${widget.patientId}');
+                          print('Tanggal: $selectedDate');
+                          print('Tekanan Darah: ${bpController.text}');
+                          print('SpO2: ${spo2Controller.text}');
+                          print('Gula Darah: ${sugarController.text}');
+                          print('Kolesterol: ${cholesterolController.text}');
+                          print('Asam Urat: ${uricAcidController.text}');
+                          print('Catatan: ${notesController.text}');
+
                           try {
-                            bool apiSuccess =
-                                await _apiService.simpanCatatanKesehatan(
-                              patientId: widget.patientId,
-                              tanggalPemeriksaan: selectedDate,
-                              tekananDarah: bpController.text.isNotEmpty
-                                  ? bpController.text
-                                  : null,
-                              gulaDarah: sugarController.text.isNotEmpty
-                                  ? sugarController.text
-                                  : null,
-                              kolesterol: cholesterolController.text.isNotEmpty
-                                  ? cholesterolController.text
-                                  : null,
-                              asamUrat: uricAcidController.text.isNotEmpty
-                                  ? uricAcidController.text
-                                  : null,
-                              catatan: notesController.text.isNotEmpty
-                                  ? notesController.text
-                                  : null,
-                            );
+                            Map<String, dynamic> apiResult;
+                            if (isEditMode) {
+                              apiResult =
+                                  await _apiService.updateCatatanKesehatan(
+                                recordId: recordToEdit!.id,
+                                patientId: widget.patientId,
+                                tanggalPemeriksaan: selectedDate,
+                                tekananDarah: bpController.text,
+                                spo2: spo2Controller.text,
+                                gulaDarah: sugarController.text,
+                                kolesterol: cholesterolController.text,
+                                asamUrat: formattedUricAcid,
+                                catatan: notesController.text,
+                              );
+                            } else {
+                              apiResult =
+                                  await _apiService.simpanCatatanKesehatan(
+                                patientId: widget.patientId,
+                                tanggalPemeriksaan: selectedDate,
+                                tekananDarah: bpController.text,
+                                spo2: spo2Controller.text,
+                                gulaDarah: sugarController.text,
+                                kolesterol: cholesterolController.text,
+                                asamUrat: formattedUricAcid,
+                                catatan: notesController.text,
+                              );
+                            }
 
                             if (!mounted) return;
 
-                            if (apiSuccess) {
-                              final newRecord = HealthRecord(
-                                id: recordToEdit?.id ??
-                                    DateTime.now()
-                                        .millisecondsSinceEpoch
-                                        .toString(),
-                                date: selectedDate,
-                                bloodPressure: bpController.text.isNotEmpty
-                                    ? bpController.text
-                                    : null,
-                                spo2: spo2Controller.text.isNotEmpty
-                                    ? int.tryParse(spo2Controller.text)
-                                    : null,
-                                bloodSugar: sugarController.text.isNotEmpty
-                                    ? int.tryParse(sugarController.text)
-                                    : null,
-                                cholesterol: cholesterolController
-                                        .text.isNotEmpty
-                                    ? int.tryParse(cholesterolController.text)
-                                    : null,
-                                uricAcid: uricAcidController.text.isNotEmpty
-                                    ? double.tryParse(uricAcidController.text)
-                                    : null,
-                                notes: notesController.text.isNotEmpty
-                                    ? notesController.text
-                                    : null,
-                              );
+                            if (apiResult['success'] == true) {
+                              final Map<String, dynamic>? returnedData =
+                                  apiResult['data'] as Map<String, dynamic>?;
+                              HealthRecord? processedRecord;
 
-                              await healthRecordBox.put(
-                                  newRecord.id, newRecord);
+                              if (returnedData != null) {
+                                processedRecord =
+                                    HealthRecord.fromJson(returnedData);
+                              } else if (isEditMode) {
+                                processedRecord = HealthRecord(
+                                  id: recordToEdit!.id,
+                                  date: selectedDate,
+                                  bloodPressure: bpController.text.isNotEmpty
+                                      ? bpController.text
+                                      : null,
+                                  spo2: spo2Controller.text.isNotEmpty
+                                      ? int.tryParse(spo2Controller.text)
+                                      : null,
+                                  bloodSugar: sugarController.text.isNotEmpty
+                                      ? int.tryParse(sugarController.text)
+                                      : null,
+                                  cholesterol: cholesterolController
+                                          .text.isNotEmpty
+                                      ? int.tryParse(cholesterolController.text)
+                                      : null,
+                                  uricAcid: formattedUricAcid != null
+                                      ? double.tryParse(formattedUricAcid)
+                                      : null,
+                                  notes: notesController.text.isNotEmpty
+                                      ? notesController.text
+                                      : null,
+                                );
+                              }
+
+                              if (processedRecord != null) {
+                                await healthRecordBox.put(
+                                    processedRecord.id, processedRecord);
+                              }
 
                               Navigator.of(ctx).pop();
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Catatan kesehatan berhasil disimpan!')),
+                                SnackBar(
+                                    content: Text(apiResult['message'] ??
+                                        (isEditMode
+                                            ? 'Catatan berhasil diperbarui!'
+                                            : 'Catatan berhasil disimpan!'))),
                               );
-                              // Reload data from server to ensure sync
                               await _loadHealthRecords();
                             } else {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Gagal menyimpan catatan ke server. Coba lagi.')),
+                                SnackBar(
+                                    content: Text(apiResult['message'] ??
+                                        'Operasi gagal.')),
                               );
                             }
                           } catch (e) {
@@ -568,23 +655,36 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
     );
 
     if (confirm == true) {
+      if (!mounted) return;
+      setState(() => _isLoading = true);
+
       try {
-        // Add API call to delete from server
-        // await _apiService.deleteCatatanKesehatan(id);
+        final apiResult = await _apiService.deleteCatatanKesehatan(id);
 
-        await healthRecordBox.delete(id);
-        await _loadHealthRecords(); // Reload to ensure sync
-
-        if (mounted) {
+        if (apiResult['success'] == true) {
+          await healthRecordBox.delete(id);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Catatan berhasil dihapus')),
+            SnackBar(
+                content:
+                    Text(apiResult['message'] ?? 'Catatan berhasil dihapus')),
+          );
+          await _loadHealthRecords();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content:
+                    Text(apiResult['message'] ?? 'Gagal menghapus catatan')),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Gagal menghapus catatan: ${e.toString()}')),
+            SnackBar(content: Text('Error: ${e.toString()}')),
           );
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
         }
       }
     }
@@ -651,193 +751,6 @@ class _HealthRecordScreenState extends State<HealthRecordScreen> {
                 style: const TextStyle(fontWeight: FontWeight.bold)),
             TextSpan(text: ' $value'),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class HealthRecordFormScreen extends StatefulWidget {
-  final String patientId;
-
-  const HealthRecordFormScreen({Key? key, required this.patientId})
-      : super(key: key);
-
-  @override
-  _HealthRecordFormScreenState createState() => _HealthRecordFormScreenState();
-}
-
-class _HealthRecordFormScreenState extends State<HealthRecordFormScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final ApiService _apiService = ApiService();
-
-  final TextEditingController _tanggalController = TextEditingController();
-  final TextEditingController _tekananDarahController = TextEditingController();
-  final TextEditingController _gulaDarahController = TextEditingController();
-  final TextEditingController _kolesterolController = TextEditingController();
-  final TextEditingController _asamUratController = TextEditingController();
-  final TextEditingController _catatanController = TextEditingController();
-
-  bool _isLoading = false;
-  DateTime? _selectedDate;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedDate = DateTime.now();
-    _tanggalController.text = "${_selectedDate!.toLocal()}".split(' ')[0];
-  }
-
-  Future<void> _pilihTanggal(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
-    );
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-        _tanggalController.text = "${picked.toLocal()}".split(' ')[0];
-      });
-    }
-  }
-
-  Future<void> _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
-
-      if (_selectedDate == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Silakan pilih tanggal pemeriksaan.')),
-        );
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
-      bool success = await _apiService.simpanCatatanKesehatan(
-        patientId: widget.patientId,
-        tanggalPemeriksaan: _selectedDate!,
-        tekananDarah: _tekananDarahController.text,
-        gulaDarah: _gulaDarahController.text,
-        kolesterol: _kolesterolController.text,
-        asamUrat: _asamUratController.text,
-        catatan: _catatanController.text,
-      );
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Catatan kesehatan berhasil disimpan!')),
-        );
-
-        _formKey.currentState?.reset();
-        _tekananDarahController.clear();
-        _gulaDarahController.clear();
-        _kolesterolController.clear();
-        _asamUratController.clear();
-        _catatanController.clear();
-
-        setState(() {
-          _selectedDate = DateTime.now();
-          _tanggalController.text = "${_selectedDate!.toLocal()}".split(' ')[0];
-        });
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gagal menyimpan catatan. Coba lagi.')),
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _tanggalController.dispose();
-    _tekananDarahController.dispose();
-    _gulaDarahController.dispose();
-    _kolesterolController.dispose();
-    _asamUratController.dispose();
-    _catatanController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Tambah Catatan Kesehatan')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: <Widget>[
-              TextFormField(
-                controller: _tanggalController,
-                decoration: const InputDecoration(
-                  labelText: 'Tanggal Pemeriksaan',
-                  hintText: 'Pilih Tanggal',
-                  suffixIcon: Icon(Icons.calendar_today),
-                ),
-                readOnly: true,
-                onTap: () => _pilihTanggal(context),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Tanggal tidak boleh kosong';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _tekananDarahController,
-                decoration: const InputDecoration(
-                    labelText: 'Tekanan Darah (cth: 120/80)'),
-                keyboardType: TextInputType.text,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _gulaDarahController,
-                decoration: const InputDecoration(
-                    labelText: 'Gula Darah (cth: 90 mg/dL)'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _kolesterolController,
-                decoration: const InputDecoration(
-                    labelText: 'Kolesterol (cth: 180 mg/dL)'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _asamUratController,
-                decoration: const InputDecoration(
-                    labelText: 'Asam Urat (cth: 5.5 mg/dL)'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _catatanController,
-                decoration:
-                    const InputDecoration(labelText: 'Catatan Tambahan'),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 24),
-              _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton(
-                      onPressed: _submitForm,
-                      child: const Text('Simpan Catatan'),
-                    ),
-            ],
-          ),
         ),
       ),
     );

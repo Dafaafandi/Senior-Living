@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../widgets/bottom_nav_bar.dart';
+import '../utils/date_utils.dart';
+import 'package:intl/intl.dart';
 
 class HomePage extends StatefulWidget {
   final String userName;
-  final int userAge;
+  final int? userAge; // Make nullable since age might be null from User model
   final String healthStatus;
 
   const HomePage({
     super.key,
     required this.userName,
-    required this.userAge,
+    this.userAge, // Remove required since it's nullable
     required this.healthStatus,
   });
 
@@ -20,14 +22,29 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   late String _currentTime;
+  String? _userName;
+  int? _userAge;
+  String? _healthStatus;
 
   @override
   void initState() {
     super.initState();
-    // Inisialisasi waktu saat widget pertama kali dibuat
     _updateTime();
-    // Pertimbangkan menggunakan Timer.periodic jika ingin update live,
-    // tapi itu akan lebih kompleks dan memakan baterai.
+    _userName = widget.userName;
+    _userAge = widget.userAge;
+    _healthStatus = widget.healthStatus;
+  }
+
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args =
+        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    if (args != null) {
+      setState(() {
+        _userName = args['name'] as String? ?? _userName;
+        _healthStatus = args['status'] as String? ?? _healthStatus;
+      });
+    }
   }
 
   void _updateTime() {
@@ -36,6 +53,13 @@ class _HomePageState extends State<HomePage> {
       'EEEE, dd MMMM yyyy HH:mm',
       'id_ID',
     ).format(DateTime.now());
+  }
+
+  String get _ageText {
+    if (_userAge != null) {
+      return "$_userAge Tahun";
+    }
+    return "Umur tidak diketahui";
   }
 
   // Add this method to get patient ID
@@ -50,17 +74,44 @@ class _HomePageState extends State<HomePage> {
     return "1"; // Replace with actual implementation
   }
 
+  Future<void> _performLogout() async {
+    // Show confirmation dialog
+    bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Konfirmasi Logout'),
+          content: const Text('Apakah Anda yakin ingin keluar?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Batal'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Keluar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true && mounted) {
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      bottomNavigationBar: const BottomNavBar(), // Navigasi bawah tetap
+      bottomNavigationBar: const BottomNavBar(),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Header (Greeting, Real-time Date/Time, Notification)
+              // Updated Header with Logout
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -72,12 +123,12 @@ class _HomePageState extends State<HomePage> {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.blue, // Sesuaikan warna jika perlu
+                          color: Colors.blue,
                         ),
                       ),
-                      const SizedBox(height: 4), // Spasi kecil
+                      const SizedBox(height: 4),
                       Text(
-                        _currentTime, // Tampilkan waktu yang diformat
+                        _currentTime,
                         style: const TextStyle(
                           fontSize: 14,
                           color: Colors.grey,
@@ -85,18 +136,21 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ],
                   ),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pushNamed(
-                        context,
-                        '/notification',
-                      ); // Navigasi notifikasi
-                    },
-                    child: const Icon(
-                      Icons.notifications,
-                      color: Colors.grey,
-                      size: 28,
-                    ),
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: () =>
+                            Navigator.pushNamed(context, '/notification'),
+                        icon: const Icon(Icons.notifications,
+                            color: Colors.grey, size: 28),
+                      ),
+                      IconButton(
+                        onPressed: _performLogout,
+                        icon: const Icon(Icons.logout,
+                            color: Colors.grey, size: 28),
+                        tooltip: 'Logout',
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -134,7 +188,7 @@ class _HomePageState extends State<HomePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.userName, // Gunakan nama dari argumen
+                            _userName ?? "Pengguna",
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 17, // Sedikit lebih besar
@@ -142,7 +196,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                           ),
                           Text(
-                            "${widget.userAge} Tahun", // Gunakan umur dari argumen
+                            _ageText,
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 14,
@@ -183,13 +237,13 @@ class _HomePageState extends State<HomePage> {
                       ),
                       decoration: BoxDecoration(
                         // Ganti warna berdasarkan status
-                        color: widget.healthStatus == "Normal"
+                        color: _healthStatus == "Normal"
                             ? Colors.green
                             : Colors.orange,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        widget.healthStatus, // Gunakan status dari argumen
+                        _healthStatus ?? "Status tidak diketahui",
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
